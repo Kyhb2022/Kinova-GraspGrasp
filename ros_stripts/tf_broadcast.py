@@ -3,44 +3,44 @@
 import rospy
 import tf
 import numpy as np
-import speech_recognition as sr  # 导入语音识别库
-import os  # 用于调用 espeak 直接输出语音
+import speech_recognition as sr  # Import the speech recognition library
+import os  # Used to call espeak for direct speech output
 from geometry_msgs.msg import TransformStamped
 
 def speak_text(text):
-    """使用 espeak 将文本直接输出为语音"""
+    """Use espeak to output text as speech"""
     try:
-        # 使用 os.system 调用 espeak 并直接播放文本内容
+        # Use os.system to call espeak and play the text content directly
         os.system('espeak "{}"'.format(text))
     except Exception as e:
         print("Error with TTS engine: {}".format(e))
 
 def get_user_choice(choices):
-    """通过语音选择抓取位姿"""
+    """Select a grasp pose via voice input"""
     recognizer = sr.Recognizer()
     mic = sr.Microphone()
 
-    # 通过扬声器输出提示信息（使用 espeak）
-    speak_text("I can see the following items: " + ", ".join(choices)+"       please select one to be grasped")
+    # Output prompt via speaker (using espeak)
+    speak_text("I can see the following items: " + ", ".join(choices))
     
     while True:
         with mic as source:
             recognizer.adjust_for_ambient_noise(source)
             print("Please say the item you choose:")
-            speak_text("Please say the item position you choose.")
+            speak_text("Please say the item you choose.")
             audio = recognizer.listen(source)
 
         try:
-            # 识别语音输入（使用英语）
+            # Recognize voice input (in English)
             command = recognizer.recognize_google(audio, language="en-US").strip()
 
             print("You said: {}".format(command))
 
-            # 忽略大小写比较，并移除多余空格
+            # Compare ignoring case and remove extra spaces
             command_lower = command.lower().strip()
             choices_lower = [choice.lower().strip() for choice in choices]
 
-            # 检查用户是否说出了一个有效的抓取位姿
+            # Check if the user said a valid grasp pose
             if command_lower in choices_lower:
                 selected_object = choices[choices_lower.index(command_lower)]
                 print("Selected: {}".format(selected_object))
@@ -58,7 +58,7 @@ def get_user_choice(choices):
 
 
 def read_gg_values(filepath):
-    """读取抓取位姿信息"""
+    """Read grasp pose information"""
     with open(filepath, 'r') as file:
         lines = file.readlines()
 
@@ -83,43 +83,43 @@ def read_gg_values(filepath):
                 rotation.append(rotation_row)
             poses[current_object]['rotation'] = rotation
 
-    return poses  # 返回所有抓取位姿
+    return poses  # Return all grasp poses
 
 class StaticTfBroadcaster:
-    """处理多个抓取位姿并通过TF广播"""
+    """Handle multiple grasp poses and broadcast them via TF"""
     def __init__(self):
         rospy.init_node('static_tf2_broadcaster')
 
         self.broadcaster = tf.TransformBroadcaster()
 
-        # 从文件中读取抓取位姿
+        # Read grasp poses from a file
         filepath = '/home/kyhb/catkin_ws/data/gg_values.txt'
         self.poses = read_gg_values(filepath)
 
-        # 获取抓取位姿名称并提示用户选择
+        # Get grasp pose names and prompt the user to choose one
         object_choices = list(self.poses.keys())
         selected_object = get_user_choice(object_choices)
 
-        # 根据用户选择的抓取位姿进行处理
+        # Process the grasp pose based on the user's choice
         self.translation = self.poses[selected_object]['translation']
         self.rotation_matrix = self.poses[selected_object]['rotation']
 
         rospy.Timer(rospy.Duration(0.1), self.broadcast_tf)
 
     def broadcast_tf(self, event):
-        """广播TF变换"""
-        # 使用选中的translation值
+        """Broadcast the TF transform"""
+        # Use the selected translation values
         translation = tuple(self.translation)
 
-        # 使用选中的rotation矩阵
+        # Use the selected rotation matrix
         rotation_matrix = np.array(self.rotation_matrix).reshape((3, 3))
 
-        # 将旋转矩阵转换为四元数
+        # Convert the rotation matrix to a quaternion
         quaternion_original = tf.transformations.quaternion_from_matrix(
             np.vstack((np.hstack((rotation_matrix, [[0], [0], [0]])), [0, 0, 0, 1]))
         )
 
-        # 广播变换
+        # Broadcasting the transform
         self.broadcaster.sendTransform(translation, quaternion_original, rospy.Time.now(), 'grasp', 'my_gen3/d435_depth_optical_frame')
 
 if __name__ == '__main__':
