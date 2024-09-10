@@ -171,7 +171,7 @@ def pixel_to_camera_coords_xy(x, y, depth, intrinsic, factor_depth):
     return X, Y
 
 def get_and_process_data(data_dir):
-    # load data
+    # Load data
     color = np.array(Image.open(os.path.join(data_dir, 'color.png')), dtype=np.float32) / 255.0
     depth = np.array(Image.open(os.path.join(data_dir, 'depth.png')))
     workspace_mask = np.array(Image.open(os.path.join(data_dir, 'workspace_mask.png')))
@@ -180,7 +180,7 @@ def get_and_process_data(data_dir):
     factor_depth = meta['factor_depth']
     print(factor_depth)
 
-    # generate cloud
+    # Generate point cloud
     intrinsic[0][0] = 636.4911
     intrinsic[1][1] = 636.4911
     intrinsic[0][2] = 642.3791
@@ -189,12 +189,12 @@ def get_and_process_data(data_dir):
     camera = CameraInfo(1280.0, 720.0, intrinsic[0][0], intrinsic[1][1], intrinsic[0][2], intrinsic[1][2], factor_depth)
     cloud = create_point_cloud_from_depth_image(depth, camera, organized=True)
 
-    # get valid points
+    # Get valid points
     mask = workspace_mask & (depth > 0)
     cloud_masked = cloud[mask]
     color_masked = color[mask]
 
-    # sample points
+    # Sample points
     if len(cloud_masked) >= cfgs.num_point:
         idxs = np.random.choice(len(cloud_masked), cfgs.num_point, replace=False)
     else:
@@ -204,7 +204,7 @@ def get_and_process_data(data_dir):
     cloud_sampled = cloud_masked[idxs]
     color_sampled = color_masked[idxs]
 
-    # convert data
+    # Convert data
     cloud = o3d.geometry.PointCloud()
     cloud.points = o3d.utility.Vector3dVector(cloud_masked.astype(np.float32))
     cloud.colors = o3d.utility.Vector3dVector(color_masked.astype(np.float32))
@@ -233,73 +233,68 @@ def collision_detection(gg, cloud):
     return gg
 
 def vis_grasps(gg, drive_service, object_name):
-    # 检查抓取组是否有有效抓取
+    # Check if there are valid grasps
     if len(gg) == 0:
         logger.info(f"No valid grasps found for {object_name}, skipping.")
-        return  # 如果没有抓取，跳过这个物体
+        return  # Skip if no valid grasps found
     
-    # 否则，处理并写入有效抓取
-    gg.nms()  # 进行非极大值抑制
-    gg.sort_by_score()  # 按得分排序抓取
-    top_grasp = gg[0]  # 获取得分最高的抓取（第一名）
+    # Otherwise, process and write the valid grasps
+    gg.nms()  # Perform non-maximum suppression
+    gg.sort_by_score()  # Sort grasps by score
+    top_grasp = gg[0]  # Get the top-scoring grasp
     
-    # 将顶级抓取转换为字符串格式
+    # Convert top grasp to string format
     top_grasp_str = str(top_grasp)
     
-    # 写入文件，记录物体名称和其对应的最高抓取位姿
+    # Write to file, recording the object name and its top grasp pose
     gg_file_path = '/home/kyhb/catkin_ws/data/gg_values.txt'
-    with open(gg_file_path, 'a') as file:  # 使用追加模式记录多个物体
-        file.write(f"Object Name: {object_name}\n")  # 写入物体名称
+    with open(gg_file_path, 'a') as file:  # Append mode to record multiple objects
+        file.write(f"Object Name: {object_name}\n")  # Write object name
         file.write("Top Grasp Value:\n")
-        file.write(top_grasp_str)  # 只写入最高抓取
-        file.write("\n\n")  # 用空行分隔每个物体的抓取位姿
+        file.write(top_grasp_str)  # Write only the top grasp
+        file.write("\n\n")  # Separate each object's grasps with a blank line
     
-    # 上传文件到Google Drive
-    parent_folder_id = '17spYQEf3v3qTsQI0D3_YSJ5nZ0FjszHW'  # 替换为你的Google Drive文件夹ID
+    # Upload file to Google Drive
+    parent_folder_id = '17spYQEf3v3qTsQI0D3_YSJ5nZ0FjszHW'  # Replace with your Google Drive folder ID
     upload_file_to_drive(drive_service, gg_file_path, parent_folder_id)
 
-
-
-
-
-
 def demo(data_dir):
-    drive_service = setup_google_drive()  # 初始化Google Drive API
+    drive_service = setup_google_drive()  # Initialize Google Drive API
     
-    # 清空文件中的前一轮结果
+    # Clear the file of the previous results
     gg_file_path = '/home/kyhb/catkin_ws/data/gg_values.txt'
     with open(gg_file_path, 'w') as file:
-        file.write("")  # 在运行开始时清空文件
+        file.write("")  # Clear the file at the start of the run
     
-    processed_objects = set()  # 用来跟踪已经处理过的物体
+    processed_objects = set()  # Track objects that have already been processed
     
     try:
         while True:
-            replace_files(drive_service)  # 在开始演示前更新文件
+            replace_files(drive_service)  # Update files before starting the demo
             
-            # 步骤1：执行物体检测
+            # Step 1: Perform object detection
             objects = perform_detection(os.path.join(data_dir, 'color.png'))
             if len(objects) == 0:
                 logger.info("No objects detected. Retrying...")
                 time.sleep(5)
                 continue
             
-            # 步骤2：处理数据并生成抓取
+            # Step 2: Process data and generate grasps
             net = get_net()
             end_points, cloud, depth, intrinsic, factor_depth = get_and_process_data(data_dir)
             
-            # 步骤3：针对每个检测到的物体进行处理
+            # Step 3: Process each detected object
             for index, obj in objects.iterrows():
-                object_name = obj['name']  # 获取物体名称
+                object_name = obj['name']  # Get the object name
 
-                # 检查物体是否已经处理过
+                # Check if the object has already been processed
                 if object_name in processed_objects:
                     logger.info(f"Object '{object_name}' already processed, skipping.")
-                    continue  # 如果已经处理过，跳过这个物体
+                    continue  # Skip if already processed
                 
                 xmin, ymin, xmax, ymax = map(int, [obj['xmin'], obj['ymin'], obj['xmax'], obj['ymax']])
                 
-                # 基于3D空间中的边界框过滤抓取
+                # Filter grasps based on 3D bounding box
                 xmin_3d_x, xmin_3d_y = pixel_to_camera_coords_xy(xmin, ymin, depth, intrinsic, factor_depth)
                 xmax_3d_x, xmax_3d_y = pixel_to_camera_coords_xy(xmax, ymax, depth, intrinsic, factor_depth)
 
@@ -312,25 +307,22 @@ def demo(data_dir):
                         xmin_3d_y <= translation[1] <= xmax_3d_y):
                         filtered_gg.add(grasp)
 
-                # 如果有必要，进行碰撞检测
+                # If necessary, perform collision detection
                 if cfgs.collision_thresh > 0:
                     filtered_gg = collision_detection(filtered_gg, np.array(cloud.points))
 
-                # 步骤4：只写入每个物体的最高抓取结果
+                # Step 4: Write only the top grasp result for each object
                 vis_grasps(filtered_gg, drive_service, object_name)
 
-                # 记录该物体已经处理过
+                # Mark the object as processed
                 processed_objects.add(object_name)
 
-            # 每5秒更新一次
+            # Update every 5 seconds
             time.sleep(5)
     
     except KeyboardInterrupt:
         logger.info("Demo interrupted by user.")
         print("Demo interrupted by user.")
-
-
-
 
 if __name__ == '__main__':
     data_dir = '/home/kyhb/catkin_ws/data'
